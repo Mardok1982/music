@@ -1,8 +1,10 @@
 package com.personale.musica.ui
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 val Bg = Color(0xFF000000)
@@ -25,7 +27,9 @@ fun MusicaTheme(content: @Composable () -> Unit) {
             onSurface = TextMain,
             surfaceVariant = Surface2,
             onSurfaceVariant = TextDim,
-        ),
-        content = content
-    )
+        )
+    ) {
+        // Colore predefinito di icone e testi: bianco (prima era nero su nero)
+        CompositionLocalProvider(LocalContentColor provides TextMain, content = content)
+    }
 }
