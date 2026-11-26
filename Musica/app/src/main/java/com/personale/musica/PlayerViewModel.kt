@@ -40,6 +40,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             it.title.contains(query, true) || it.artist.contains(query, true) || it.album.contains(query, true)
         }
 
+    private val store = PlaylistStore(app)
+    var playlists by mutableStateOf<List<Playlist>>(emptyList()); private set
+
     private var controller: MediaController? = null
     private val future = MediaController.Builder(
         app, SessionToken(app, ComponentName(app, PlaybackService::class.java))
@@ -50,6 +53,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        viewModelScope.launch {
+            playlists = withContext(Dispatchers.IO) { store.load() }
+        }
+
         future.addListener({
             controller = future.get().also {
                 it.addListener(listener)
@@ -89,10 +96,75 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Avvia la lista (filtrata) partendo dal brano scelto. */
     fun play(song: Song) {
         val list = filtered
+        playQueue(list, list.indexOf(song).coerceAtLeast(0))
+    }
+
+    /** Riproduce una lista di brani nell'ordine dato, partendo da [index]. */
+    fun playQueue(list: List<Song>, index: Int, shuffled: Boolean = false) {
         val c = controller ?: return
-        c.setMediaItems(list.map { it.toMediaItem() }, list.indexOf(song).coerceAtLeast(0), 0L)
+        if (list.isEmpty()) return
+        c.shuffleModeEnabled = shuffled
+        val start = if (shuffled) list.indices.random() else index.coerceIn(0, list.lastIndex)
+        c.setMediaItems(list.map { it.toMediaItem() }, start, 0L)
         c.prepare()
         c.play()
+    }
+
+    // ---------------- Playlist ----------------
+
+
+    private val songById: Map<Long, Song>
+        get() = songs.associateBy { it.id }
+
+    /** I brani della playlist ancora presenti sul telefono, nell'ordine scelto. */
+    fun songsOf(p: Playlist): List<Song> {
+        val map = songById
+        return p.songIds.mapNotNull { map[it] }
+    }
+
+    fun playlist(id: Long): Playlist? = playlists.firstOrNull { it.id == id }
+
+    private fun persist(newList: List<Playlist>) {
+        playlists = newList
+        store.save(newList) // file piccolo: salvataggio immediato e in ordine
+    }
+
+    private fun update(id: Long, change: (Playlist) -> Playlist) =
+        persist(playlists.map { if (it.id == id) change(it) else it })
+
+    /** Lista degli id pulita dai brani non più presenti sul telefono. */
+    private fun cleanIds(p: Playlist): MutableList<Long> {
+        if (songs.isEmpty()) return p.songIds.toMutableList()
+        val map = songById
+        return p.songIds.filter { it in map }.toMutableList()
+    }
+
+    fun createPlaylist(name: String, initialSongs: List<Long> = emptyList()): Long {
+        val id = System.currentTimeMillis()
+        persist(playlists + Playlist(id, name.trim().ifBlank { "Nuova playlist" }, initialSongs))
+        return id
+    }
+
+    fun renamePlaylist(id: Long, name: String) =
+        update(id) { it.copy(name = name.trim().ifBlank { it.name }) }
+
+    fun deletePlaylist(id: Long) = persist(playlists.filterNot { it.id == id })
+
+    /** Aggiunge in fondo i brani non già presenti. */
+    fun addToPlaylist(id: Long, songIds: List<Long>) = update(id) { p ->
+        p.copy(songIds = p.songIds + songIds.filterNot { it in p.songIds })
+    }
+
+    fun removeFromPlaylist(id: Long, index: Int) = update(id) { p ->
+        val ids = cleanIds(p)
+        if (index in ids.indices) ids.removeAt(index)
+        p.copy(songIds = ids)
+    }
+
+    fun moveInPlaylist(id: Long, from: Int, to: Int) = update(id) { p ->
+        val ids = cleanIds(p)
+        if (from in ids.indices && to in ids.indices) ids.add(to, ids.removeAt(from))
+        p.copy(songIds = ids)
     }
 
     fun shuffleAll() {

@@ -16,13 +16,26 @@ android {
         versionName = "1.0"
     }
 
+    // Chiave fissa: così ogni nuova versione si installa sopra la vecchia
+    // senza disinstallare (e senza perdere le playlist).
+    signingConfigs {
+        create("musica") {
+            storeFile = file("musica.jks")
+            storePassword = "musica123"
+            keyAlias = "musica"
+            keyPassword = "musica123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Firmata con la chiave debug: è un'app solo per te, va benissimo.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("musica")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("musica")
         }
     }
 
